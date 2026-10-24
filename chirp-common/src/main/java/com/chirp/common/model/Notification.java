@@ -73,8 +73,8 @@ public class Notification {
     public String getType() { return type; }
     public Long getPostId() { return postId; }
     public Long getCommentId() { return commentId; }
-    public boolean isRead() { return isRead; }
+    public boolean getIsRead() { return isRead; }
     public Instant getCreatedAt() { return createdAt; }
 
-    public void setRead(boolean read) { isRead = read; }
+    public void setIsRead(boolean read) { isRead = read; }
 }

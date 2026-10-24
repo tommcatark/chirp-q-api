@@ -11,8 +11,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.*;
-
 @RestController
 @RequestMapping("/api/notifications")
 public class NotificationController {
@@ -44,14 +42,10 @@ public class NotificationController {
         int safeLimit = Math.max(1, Math.min(limit, MAX_LIMIT));
         Page<Notification> page = notifications.findByUserIdOrderByCreatedAtDesc(userId, PageRequest.of(offset / safeLimit, safeLimit));
         long unreadCount = notifications.countByUserIdAndIsReadFalse(userId);
-        List<NotificationDTO.NotificationResponse> items = page.getContent().stream().map(this::toResp).toList();
-        Map<String, Object> response = new LinkedHashMap<>();
-        response.put("items", items);
-        response.put("total", page.getTotalElements());
-        response.put("offset", offset);
-        response.put("limit", safeLimit);
-        response.put("hasMore", offset + items.size() < page.getTotalElements());
-        response.put("unreadCount", unreadCount);
+        var items = page.getContent().stream().map(this::toResp).toList();
+        var response = new NotificationDTO.NotificationPageResponse(
+                items, page.getTotalElements(), offset, safeLimit,
+                offset + items.size() < page.getTotalElements(), unreadCount);
         return ResponseEntity.ok(response);
     }
 
@@ -65,7 +59,7 @@ public class NotificationController {
         } else {
             notifications.markReadByIds(request.ids(), userId);
         }
-        return ResponseEntity.ok(Map.of("unreadCount", notifications.countByUserIdAndIsReadFalse(userId)));
+        return ResponseEntity.ok(new NotificationDTO.MarkReadResponse(notifications.countByUserIdAndIsReadFalse(userId)));
     }
 
     private NotificationDTO.NotificationResponse toResp(Notification n) {
@@ -87,7 +81,7 @@ public class NotificationController {
         }
         return new NotificationDTO.NotificationResponse(
                 n.getId(), n.getType(), actorResp, n.getPostId(), postExcerpt,
-                n.getCommentId(), commentExcerpt, n.isRead(), n.getCreatedAt());
+                n.getCommentId(), commentExcerpt, n.getIsRead(), n.getCreatedAt());
     }
 
     private String excerpt(String content) {

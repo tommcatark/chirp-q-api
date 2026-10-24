@@ -246,6 +246,10 @@ CREATE INDEX IF NOT EXISTS idx_notifications_user_id    ON notifications (user_i
 CREATE INDEX IF NOT EXISTS idx_notifications_actor_id   ON notifications (actor_id);
 CREATE INDEX IF NOT EXISTS idx_notifications_post_id    ON notifications (post_id) WHERE post_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_notifications_comment_id ON notifications (comment_id) WHERE comment_id IS NOT NULL;
+-- 规范 §6.1：通知列表按时间倒序查询复合索引
+CREATE INDEX IF NOT EXISTS idx_notifications_user_created ON notifications (user_id, created_at DESC);
+-- 规范 §6.1：未读通知计数索引
+CREATE INDEX IF NOT EXISTS idx_notifications_user_read    ON notifications (user_id, is_read);
 CREATE INDEX IF NOT EXISTS idx_messages_sender_id     ON messages     (sender_id);
 CREATE INDEX IF NOT EXISTS idx_messages_recipient_id  ON messages     (recipient_id);
 -- 会话查询复合索引：两人之间按时间倒序

@@ -54,10 +54,8 @@ public class MessageController {
                 })
                 .toList();
 
-        Map<String, Object> response = new LinkedHashMap<>();
-        response.put("items", items);
-        response.put("totalUnread", unreadBySender.values().stream().mapToLong(Long::longValue).sum());
-        return ResponseEntity.ok(response);
+        long totalUnread = unreadBySender.values().stream().mapToLong(Long::longValue).sum();
+        return ResponseEntity.ok(new MessageDTO.ConversationsResponse(items, totalUnread));
     }
 
     @GetMapping
@@ -73,13 +71,7 @@ public class MessageController {
         int safeLimit = Math.max(1, Math.min(limit, MAX_LIMIT));
         Page<Message> page = messages.findConversation(me, otherId, PageRequest.of(offset / safeLimit, safeLimit));
         List<MessageDTO.MessageResponse> items = page.getContent().stream().map(this::toResp).toList();
-        Map<String, Object> response = new LinkedHashMap<>();
-        response.put("items", items);
-        response.put("total", page.getTotalElements());
-        response.put("offset", offset);
-        response.put("limit", safeLimit);
-        response.put("hasMore", offset + items.size() < page.getTotalElements());
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(PageResponse.of(items, page.getTotalElements(), offset, safeLimit));
     }
 
     @PostMapping
@@ -113,19 +105,19 @@ public class MessageController {
             return ResponseEntity.badRequest().body(new AuthDTO.ErrorResponse("缺少会话对象"));
         }
         messages.markConversationRead(me, request.with());
-        return ResponseEntity.ok(Map.of("unreadCount", messages.countByRecipientIdAndIsReadFalse(me)));
+        return ResponseEntity.ok(new MessageDTO.UnreadCountResponse(messages.countByRecipientIdAndIsReadFalse(me)));
     }
 
     @GetMapping("/unread-count")
     public ResponseEntity<?> unreadCount(@RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorization) {
         Long me = requireAuth(authorization);
         if (me == null) return unauthorized();
-        return ResponseEntity.ok(Map.of("unreadCount", messages.countByRecipientIdAndIsReadFalse(me)));
+        return ResponseEntity.ok(new MessageDTO.UnreadCountResponse(messages.countByRecipientIdAndIsReadFalse(me)));
     }
 
     private MessageDTO.MessageResponse toResp(Message m) {
         return new MessageDTO.MessageResponse(
-                m.getId(), m.getSenderId(), m.getRecipientId(), m.getContent(), m.isRead(), m.getCreatedAt());
+                m.getId(), m.getSenderId(), m.getRecipientId(), m.getContent(), m.getIsRead(), m.getCreatedAt());
     }
 
     private Long requireAuth(String authorization) {

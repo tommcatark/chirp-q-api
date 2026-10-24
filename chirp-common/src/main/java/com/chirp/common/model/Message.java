@@ -56,8 +56,8 @@ public class Message {
     public Long getSenderId() { return senderId; }
     public Long getRecipientId() { return recipientId; }
     public String getContent() { return content; }
-    public boolean isRead() { return isRead; }
+    public boolean getIsRead() { return isRead; }
     public Instant getCreatedAt() { return createdAt; }
 
-    public void setRead(boolean read) { isRead = read; }
+    public void setIsRead(boolean read) { isRead = read; }
 }

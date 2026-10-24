@@ -1,16 +1,15 @@
 package com.chirp.common.model;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 import java.time.Instant;
 import java.util.List;
 
 /**
  * 通知相关 DTO。
  * <p>
- * 规范 §3.0 NotificationResponse：
- * - type 枚举：like / comment / follow
- * - actor：触发者 {id, name, handle, avatarUrl}
- * - postExcerpt：帖子正文摘要（截取前 50 字符），帖子已删除或 type=follow 时为 null
- * - commentExcerpt：评论摘要（前 50 字符），仅 type=comment 有值
+ * 规范 §1.5：布尔字段 isRead 保留 is 前缀，前端按此读取。
+ * 规范 §3.1：通知列表响应 PageResponse + unreadCount。
  * </p>
  */
 public final class NotificationDTO {
@@ -30,12 +29,25 @@ public final class NotificationDTO {
             String postExcerpt,
             Long commentId,
             String commentExcerpt,
-            boolean isRead,
+            @JsonProperty("isRead") boolean isRead,
             Instant createdAt
+    ) {}
+
+    public record NotificationPageResponse(
+            List<NotificationResponse> items,
+            long total,
+            int offset,
+            int limit,
+            boolean hasMore,
+            long unreadCount
     ) {}
 
     public record MarkReadRequest(
             List<Long> ids
+    ) {}
+
+    public record MarkReadResponse(
+            long unreadCount
     ) {}
 
     private NotificationDTO() {}

@@ -12,6 +12,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.*;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/users")
@@ -23,16 +24,19 @@ public class UserController {
     private final LikeRepository likes;
     private final CommentRepository comments;
     private final FollowRepository follows;
+    private final BookmarkRepository bookmarks;
     private final TokenStoreService tokenStore;
 
     public UserController(UserRepository users, PostRepository posts,
                           LikeRepository likes, CommentRepository comments,
-                          FollowRepository follows, TokenStoreService tokenStore) {
+                          FollowRepository follows, BookmarkRepository bookmarks,
+                          TokenStoreService tokenStore) {
         this.users = users;
         this.posts = posts;
         this.likes = likes;
         this.comments = comments;
         this.follows = follows;
+        this.bookmarks = bookmarks;
         this.tokenStore = tokenStore;
     }
 
@@ -97,11 +101,28 @@ public class UserController {
         int safeLimit = Math.max(1, Math.min(limit, MAX_LIMIT));
         Long currentUserId = resolveUserId(authorization);
         Page<Post> page = posts.findByUserIdOrderByCreatedAtDesc(id, PageRequest.of(offset / safeLimit, safeLimit));
-        List<PostDTO.PostResponse> items = page.getContent().stream().map(p -> {
+
+        List<Post> postList = page.getContent();
+        if (postList.isEmpty()) {
+            return ResponseEntity.ok(PageResponse.of(Collections.emptyList(), page.getTotalElements(), offset, safeLimit));
+        }
+
+        List<Long> postIds = postList.stream().map(Post::getId).toList();
+        Set<Long> likedPostIds = Collections.emptySet();
+        Set<Long> bookmarkedPostIds = Collections.emptySet();
+        if (currentUserId != null) {
+            likedPostIds = new HashSet<>(likes.findLikedPostIdsByUserId(currentUserId, postIds));
+            bookmarkedPostIds = new HashSet<>(bookmarks.findBookmarkedPostIdsByUserId(currentUserId, postIds));
+        }
+
+        Set<Long> finalLikedPostIds = likedPostIds;
+        Set<Long> finalBookmarkedPostIds = bookmarkedPostIds;
+        List<PostDTO.PostResponse> items = postList.stream().map(p -> {
             User author = users.findById(p.getUserId()).orElse(null);
-            boolean liked = currentUserId != null && likes.existsByUserIdAndPostId(currentUserId, p.getId());
+            boolean liked = finalLikedPostIds.contains(p.getId());
             boolean mine = currentUserId != null && currentUserId.equals(p.getUserId());
-            return toPostResponse(p, author, liked, mine);
+            boolean bookmarked = finalBookmarkedPostIds.contains(p.getId());
+            return toPostResponse(p, author, liked, mine, bookmarked);
         }).toList();
         return ResponseEntity.ok(PageResponse.of(items, page.getTotalElements(), offset, safeLimit));
     }
@@ -137,14 +158,14 @@ public class UserController {
                 followedByMe, me);
     }
 
-    private PostDTO.PostResponse toPostResponse(Post post, User author, boolean liked, boolean mine) {
+    private PostDTO.PostResponse toPostResponse(Post post, User author, boolean liked, boolean mine, boolean bookmarked) {
         String name = author != null ? author.getName() : "未知用户";
         String handle = author != null ? UserUtil.handleOf(author.getEmail()) : "unknown";
         String avatarUrl = author != null ? author.getAvatarUrl() : null;
         return new PostDTO.PostResponse(
                 post.getId(), post.getUserId(), name, handle, avatarUrl,
                 post.getContent(), post.getCreatedAt(),
-                likes.countByPostId(post.getId()), 0, comments.countByPostId(post.getId()), liked, mine);
+                likes.countByPostId(post.getId()), 0, comments.countByPostId(post.getId()), liked, mine, bookmarked);
     }
 
     private ResponseEntity<?> unauthorized() {

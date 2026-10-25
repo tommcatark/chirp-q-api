@@ -11,6 +11,10 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.*;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+
 @RestController
 @RequestMapping("/api/search")
 public class SearchController {
@@ -21,16 +25,19 @@ public class SearchController {
     private final LikeRepository likes;
     private final CommentRepository comments;
     private final FollowRepository follows;
+    private final BookmarkRepository bookmarks;
     private final TokenStoreService tokenStore;
 
     public SearchController(PostRepository posts, UserRepository users,
                             LikeRepository likes, CommentRepository comments,
-                            FollowRepository follows, TokenStoreService tokenStore) {
+                            FollowRepository follows, BookmarkRepository bookmarks,
+                            TokenStoreService tokenStore) {
         this.posts = posts;
         this.users = users;
         this.likes = likes;
         this.comments = comments;
         this.follows = follows;
+        this.bookmarks = bookmarks;
         this.tokenStore = tokenStore;
     }
 
@@ -48,12 +55,31 @@ public class SearchController {
 
         if ("post".equals(type)) {
             Page<Post> page = posts.searchByContent(keyword, PageRequest.of(offset / safeLimit, safeLimit));
-            var items = page.getContent().stream().map(p -> {
-                User author = users.findById(p.getUserId()).orElse(null);
-                boolean liked = currentUserId != null && likes.existsByUserIdAndPostId(currentUserId, p.getId());
-                boolean mine = currentUserId != null && currentUserId.equals(p.getUserId());
-                return toPostResponse(p, author, liked, mine);
-            }).toList();
+            List<Post> postList = page.getContent();
+            if (postList.isEmpty()) {
+                return ResponseEntity.ok(PageResponse.of(Collections.emptyList(), page.getTotalElements(), offset, safeLimit));
+            }
+
+            List<Long> userIds = postList.stream().map(Post::getUserId).distinct().toList();
+            Map<Long, User> authorMap = users.findAllById(userIds).stream()
+                    .collect(Collectors.toMap(User::getId, Function.identity()));
+
+            List<Long> postIds = postList.stream().map(Post::getId).toList();
+            Set<Long> likedPostIds = Collections.emptySet();
+            Set<Long> bookmarkedPostIds = Collections.emptySet();
+            if (currentUserId != null) {
+                likedPostIds = new HashSet<>(likes.findLikedPostIdsByUserId(currentUserId, postIds));
+                bookmarkedPostIds = new HashSet<>(bookmarks.findBookmarkedPostIdsByUserId(currentUserId, postIds));
+            }
+
+            Set<Long> finalLikedPostIds = likedPostIds;
+            Set<Long> finalBookmarkedPostIds = bookmarkedPostIds;
+            var items = postList.stream()
+                    .map(p -> toPostResponse(p, authorMap.get(p.getUserId()),
+                            finalLikedPostIds.contains(p.getId()),
+                            currentUserId != null && currentUserId.equals(p.getUserId()),
+                            finalBookmarkedPostIds.contains(p.getId())))
+                    .toList();
             return ResponseEntity.ok(PageResponse.of(items, page.getTotalElements(), offset, safeLimit));
         }
 
@@ -69,14 +95,14 @@ public class SearchController {
         return tokenStore.getUserId(token);
     }
 
-    private PostDTO.PostResponse toPostResponse(Post post, User author, boolean liked, boolean mine) {
+    private PostDTO.PostResponse toPostResponse(Post post, User author, boolean liked, boolean mine, boolean bookmarked) {
         String name = author != null ? author.getName() : "未知用户";
         String handle = author != null ? UserUtil.handleOf(author.getEmail()) : "unknown";
         String avatarUrl = author != null ? author.getAvatarUrl() : null;
         return new PostDTO.PostResponse(
                 post.getId(), post.getUserId(), name, handle, avatarUrl,
                 post.getContent(), post.getCreatedAt(),
-                likes.countByPostId(post.getId()), 0, comments.countByPostId(post.getId()), liked, mine);
+                likes.countByPostId(post.getId()), 0, comments.countByPostId(post.getId()), liked, mine, bookmarked);
     }
 
     private UserDTO.UserResponse toUserResponse(User user, Long currentUserId) {

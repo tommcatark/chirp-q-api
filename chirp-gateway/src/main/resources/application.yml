@@ -54,6 +54,11 @@ spring:
           predicates:
             - Path=/api/messages/**
 
+        - id: chirp-bookmarks-route
+          uri: http://localhost:8082
+          predicates:
+            - Path=/api/bookmarks/**
+
 app:
   cors-origin: http://localhost:4173
 

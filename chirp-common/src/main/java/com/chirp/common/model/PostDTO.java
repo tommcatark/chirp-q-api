@@ -22,7 +22,7 @@ public final class PostDTO {
             @NotBlank(message = "内容不能为空") @Size(max = 500, message = "内容不能超过 500 字符") String content
     ) {}
 
-    /** 帖子响应 — 规范 §3.0 PostResponse */
+    /** 帖子响应 — 规范 §3.0 PostResponse + 收藏规范 §3 */
     public record PostResponse(
             Long id,
             Long userId,
@@ -35,11 +35,15 @@ public final class PostDTO {
             long reposts,
             long comments,
             boolean liked,
-            boolean mine
+            boolean mine,
+            boolean bookmarked
     ) {}
 
     /** 点赞/取消点赞响应 — 规范 §3.2.6 / §3.2.7 */
     public record LikeResponse(boolean liked, long likes) {}
+
+    /** 收藏/取消收藏响应 — 收藏规范 §2.1 / §2.2 */
+    public record BookmarkResponse(boolean bookmarked) {}
 
     private PostDTO() {}
 }

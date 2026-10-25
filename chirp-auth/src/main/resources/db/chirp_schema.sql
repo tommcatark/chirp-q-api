@@ -232,7 +232,33 @@ ALTER TABLE messages ADD CONSTRAINT ck_messages_no_self
     CHECK (sender_id <> recipient_id);
 
 -- ============================================================================
--- 9. 补充索引 — 外键索引（PostgreSQL 不自动为外键创建索引，需手动添加）
+-- 9. bookmarks 表 — 收藏
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS bookmarks (
+    id          BIGSERIAL    PRIMARY KEY,                         -- 主键
+    user_id     BIGINT       NOT NULL,                            -- 收藏者
+    post_id     BIGINT       NOT NULL,                            -- 被收藏的帖子
+    created_at  TIMESTAMPTZ  NOT NULL DEFAULT now()               -- 收藏时间
+);
+
+COMMENT ON TABLE  bookmarks IS '收藏表 — 存储用户对帖子的收藏记录';
+COMMENT ON COLUMN bookmarks.user_id    IS '收藏者，外键关联users.id，删除用户时级联删除收藏';
+COMMENT ON COLUMN bookmarks.post_id    IS '被收藏的帖子，外键关联posts.id，删除帖子时级联删除收藏';
+COMMENT ON COLUMN bookmarks.created_at IS '收藏时间，按此倒序排列收藏列表';
+
+-- 外键：删除用户时级联删除其所有收藏
+ALTER TABLE bookmarks ADD CONSTRAINT fk_bookmarks_user
+    FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE;
+
+-- 外键：删除帖子时级联删除其所有收藏
+ALTER TABLE bookmarks ADD CONSTRAINT fk_bookmarks_post
+    FOREIGN KEY (post_id) REFERENCES posts (id) ON DELETE CASCADE;
+
+-- 唯一约束：同一用户对同一帖子只能收藏一次
+ALTER TABLE bookmarks ADD CONSTRAINT uk_bookmarks_user_post UNIQUE (user_id, post_id);
+
+-- ============================================================================
+-- 10. 补充索引 — 外键索引（PostgreSQL 不自动为外键创建索引，需手动添加）
 -- ============================================================================
 CREATE INDEX IF NOT EXISTS idx_tokens_user_id       ON tokens       (user_id);
 CREATE INDEX IF NOT EXISTS idx_posts_user_id        ON posts        (user_id);
@@ -254,5 +280,9 @@ CREATE INDEX IF NOT EXISTS idx_messages_sender_id     ON messages     (sender_id
 CREATE INDEX IF NOT EXISTS idx_messages_recipient_id  ON messages     (recipient_id);
 -- 会话查询复合索引：两人之间按时间倒序
 CREATE INDEX IF NOT EXISTS idx_messages_pair_created  ON messages     (sender_id, recipient_id, created_at DESC);
+-- 收藏索引：收藏列表按收藏时间倒序查询
+CREATE INDEX IF NOT EXISTS idx_bookmarks_user_created ON bookmarks    (user_id, created_at DESC);
+-- 收藏索引：帖子删除/统计用
+CREATE INDEX IF NOT EXISTS idx_bookmarks_post_id      ON bookmarks    (post_id);
 
 COMMIT;

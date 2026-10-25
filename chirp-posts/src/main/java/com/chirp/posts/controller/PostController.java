@@ -27,18 +27,20 @@ public class PostController {
     private final CommentRepository comments;
     private final FollowRepository follows;
     private final NotificationRepository notifications;
+    private final BookmarkRepository bookmarks;
     private final TokenStoreService tokenStore;
 
     public PostController(PostRepository posts, UserRepository users,
                           LikeRepository likes, CommentRepository comments,
                           FollowRepository follows, NotificationRepository notifications,
-                          TokenStoreService tokenStore) {
+                          BookmarkRepository bookmarks, TokenStoreService tokenStore) {
         this.posts = posts;
         this.users = users;
         this.likes = likes;
         this.comments = comments;
         this.follows = follows;
         this.notifications = notifications;
+        this.bookmarks = bookmarks;
         this.tokenStore = tokenStore;
     }
 
@@ -85,7 +87,7 @@ public class PostController {
         if (content.codePointCount(0, content.length()) > 500) return badRequest("内容不能超过 500 字符");
 
         Post saved = posts.save(new Post(author.getId(), content));
-        return ResponseEntity.status(HttpStatus.CREATED).body(toResponse(saved, author, false, true));
+        return ResponseEntity.status(HttpStatus.CREATED).body(toResponse(saved, author, false, true, false));
     }
 
     @GetMapping("/{id}")
@@ -98,7 +100,8 @@ public class PostController {
         User author = users.findById(post.getUserId()).orElse(null);
         boolean liked = currentUserId != null && likes.existsByUserIdAndPostId(currentUserId, id);
         boolean mine = currentUserId != null && currentUserId.equals(post.getUserId());
-        return ResponseEntity.ok(toResponse(post, author, liked, mine));
+        boolean bookmarked = currentUserId != null && bookmarks.existsByUserIdAndPostId(currentUserId, id);
+        return ResponseEntity.ok(toResponse(post, author, liked, mine, bookmarked));
     }
 
     @DeleteMapping("/{id}")
@@ -148,6 +151,34 @@ public class PostController {
         likes.findByUserIdAndPostId(userId, id).ifPresent(likes::delete);
         long likeCount = likes.countByPostId(id);
         return ResponseEntity.ok(new PostDTO.LikeResponse(false, likeCount));
+    }
+
+    @PostMapping("/{id}/bookmark")
+    public ResponseEntity<?> bookmark(@PathVariable Long id,
+                                      @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorization) {
+        Long userId = requireAuth(authorization);
+        if (userId == null) return unauthorized();
+
+        Post post = posts.findById(id).orElse(null);
+        if (post == null) return ResponseEntity.status(HttpStatus.NOT_FOUND).body(error("帖子不存在"));
+
+        if (!bookmarks.existsByUserIdAndPostId(userId, id)) {
+            bookmarks.save(new Bookmark(userId, id));
+        }
+        return ResponseEntity.ok(new PostDTO.BookmarkResponse(true));
+    }
+
+    @DeleteMapping("/{id}/bookmark")
+    public ResponseEntity<?> unbookmark(@PathVariable Long id,
+                                        @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorization) {
+        Long userId = requireAuth(authorization);
+        if (userId == null) return unauthorized();
+
+        Post post = posts.findById(id).orElse(null);
+        if (post == null) return ResponseEntity.status(HttpStatus.NOT_FOUND).body(error("帖子不存在"));
+
+        bookmarks.deleteByUserIdAndPostId(userId, id);
+        return ResponseEntity.ok(new PostDTO.BookmarkResponse(false));
     }
 
     @GetMapping("/{id}/comments")
@@ -214,22 +245,27 @@ public class PostController {
         Map<Long, User> authorMap = users.findAllById(userIds).stream()
                 .collect(Collectors.toMap(User::getId, Function.identity()));
 
+        List<Long> postIds = postList.stream().map(Post::getId).toList();
+
         Set<Long> likedPostIds = Collections.emptySet();
+        Set<Long> bookmarkedPostIds = Collections.emptySet();
         if (currentUserId != null) {
-            likedPostIds = new HashSet<>(likes.findLikedPostIdsByUserId(currentUserId,
-                    postList.stream().map(Post::getId).toList()));
+            likedPostIds = new HashSet<>(likes.findLikedPostIdsByUserId(currentUserId, postIds));
+            bookmarkedPostIds = new HashSet<>(bookmarks.findBookmarkedPostIdsByUserId(currentUserId, postIds));
         }
 
         Set<Long> finalLikedPostIds = likedPostIds;
+        Set<Long> finalBookmarkedPostIds = bookmarkedPostIds;
         List<PostDTO.PostResponse> items = postList.stream()
                 .map(p -> toResponse(p, authorMap.get(p.getUserId()),
                         finalLikedPostIds.contains(p.getId()),
-                        currentUserId != null && currentUserId.equals(p.getUserId())))
+                        currentUserId != null && currentUserId.equals(p.getUserId()),
+                        finalBookmarkedPostIds.contains(p.getId())))
                 .toList();
         return PageResponse.of(items, page.getTotalElements(), offset, limit);
     }
 
-    private PostDTO.PostResponse toResponse(Post post, User author, boolean liked, boolean mine) {
+    private PostDTO.PostResponse toResponse(Post post, User author, boolean liked, boolean mine, boolean bookmarked) {
         String name = author != null ? author.getName() : "未知用户";
         String handle = author != null ? UserUtil.handleOf(author.getEmail()) : "unknown";
         String avatarUrl = author != null ? author.getAvatarUrl() : null;
@@ -237,7 +273,7 @@ public class PostController {
         long commentCount = comments.countByPostId(post.getId());
         return new PostDTO.PostResponse(
                 post.getId(), post.getUserId(), name, handle, avatarUrl,
-                post.getContent(), post.getCreatedAt(), likeCount, 0, commentCount, liked, mine);
+                post.getContent(), post.getCreatedAt(), likeCount, 0, commentCount, liked, mine, bookmarked);
     }
 
     private CommentDTO.CommentResponse toCommentResponse(Comment comment, User author, Long currentUserId) {
